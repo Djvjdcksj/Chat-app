@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time Chat Application</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            width: 400px;
+            max-width: 100%;
+            background-color: white;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 20px;
+        }
+        .auth-container, .chat-container {
+            display: none;
+        }
+        .auth-container.active, .chat-container.active {
+            display: block;
+        }
+        .chat-header {
+            background-color: #007bff;
+            color: white;
+            padding: 10px;
+            text-align: center;
+        }
+        .chat-messages {
+            height: 300px;
+            overflow-y: auto;
+            padding: 10px;
+            border-bottom: 1px solid #f0f2f5;
+        }
+        .chat-input {
+            display: flex;
+            padding: 10px;
+            border-top: 1px solid #f0f2f5;
+        }
+        .chat-input input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-right: 10px;
+        }
+        .auth-container input {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .auth-container button, .chat-input button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .auth-container button:hover, .chat-input button:hover {
+            background-color: #0056b3;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 8px;
+            border-radius: 5px;
+            max-width: 80%;
+        }
+        .message.you {
+            background-color: #d4edda;
+            margin-left: auto;
+            text-align: right;
+        }
+        .message.others {
+            background-color: #f1f1f1;
+            margin-right: auto;
+        }
+        .message.system {
+            background-color: #e9ecef;
+            text-align: center;
+            font-style: italic;
+        }
+        .error {
+            color: red;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- سائن اپ/لاگ ان کنٹینر -->
+        <div class="auth-container active" id="authContainer">
+            <h2 id="authHeader">Sign Up</h2>
+            <input type="text" id="username" placeholder="Enter your username..." />
+            <input type="password" id="password" placeholder="Enter your password..." />
+            <button onclick="signup()">Sign Up</button>
+            <button onclick="toggleAuthMode()">Switch to Login</button skon
+            <p id="authError" class="error"></p>
+        </div>
+        <!-- چیٹ کنٹینر -->
+        <div class="chat-container" id="chatContainer">
+            <div class="chat-header">
+                Real-Time Chat
+            </div>
+            <div class="chat-messages" id="chatMessages">
+                <!-- Messages will appear here -->
+            </div>
+            <div class="chat-input">
+                <input type="text" id="chatInput" placeholder="Type a message..." />
+                <button onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        // اپنے ڈیوائس کا IP ایڈریس یہاں استعمال کریں
+        const socket = new WebSocket('ws://localhost:8080');
+        let username = null;
+        let isSignupMode = true;
+
+        socket.onopen = function() {
+            console.log("Connected to WebSocket server");
+        };
+
+        socket.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            const chatMessages = document.getElementById('chatMessages');
+            const authError = document.getElementById('authError');
+
+            if (data.type === 'signup_success' || data.type === 'login_success') {
+                username = document.getElementById('username').value;
+                document.getElementById('authContainer').classList.remove('active');
+                document.getElementById('chatContainer').classList.add('active');
+                authError.textContent = '';
+            } else if (data.type === 'error') {
+                authError.textContent = data.message;
+            } else if (data.type === 'system') {
+                const messageElement = document.createElement('div');
+                messageElement.className = 'message system';
+                messageElement.textContent = data.message;
+                chatMessages.appendChild(messageElement);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            } else if (data.type === 'history' || data.type === 'message') {
+                // اپنے پیغام کو نظر انداز کریں
+                if (data.username === username && data.type === 'message') {
+                    return;
+                }
+                const messageElement = document.createElement('div');
+                messageElement.className = 'message others';
+                messageElement.textContent = `${data.username}: ${data.message}`;
+                chatMessages.appendChild(messageElement);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+        };
+
+        socket.onerror = function(error) {
+            console.error('WebSocket Error: ', error);
+            const authError = document.getElementById('authError');
+            authError.textContent = 'Error connecting to server';
+        };
+
+        socket.onclose = function() {
+            const chatMessages = document.getElementById('chatMessages');
+            const messageElement = document.createElement('div');
+            messageElement.className = 'message system';
+            messageElement.textContent = 'Disconnected from server';
+            chatMessages.appendChild(messageElement);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        };
+
+        function signup() {
+            const usernameInput = document.getElementById('username').value.trim();
+            const passwordInput = document.getElementById('password').value.trim();
+            const authError = document.getElementById('authError');
+            if (usernameInput === '' || passwordInput === '') {
+                authError.textContent = 'Please enter both username and password';
+                return;
+            }
+            socket.send(JSON.stringify({
+                type: isSignupMode ? 'signup' : 'login',
+                username: usernameInput,
+                password: passwordInput
+            }));
+        }
+
+        function toggleAuthMode() {
+            isSignupMode = !isSignupMode;
+            document.getElementById('authHeader').textContent = isSignupMode ? 'Sign Up' : 'Login';
+            document.getElementById('authError').textContent = '';
+            document.getElementsByTagName('button')[0].textContent = isSignupMode ? 'Sign Up' : 'Login';
+            document.getElementsByTagName('button')[1].textContent = isSignupMode ? 'Switch to Login' : 'Switch to Sign Up';
+        }
+
+        function sendMessage() {
+            const inputField = document.getElementById('chatInput');
+            const messageText = inputField.value.trim();
+            if (messageText !== "") {
+                socket.send(JSON.stringify({ type: 'message', message: messageText }));
+                const messageElement = document.createElement('div');
+                messageElement.className = 'message you';
+                messageElement.textContent = `You: ${messageText}`;
+                const chatMessages = document.getElementById('chatMessages');
+                chatMessages.appendChild(messageElement);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+                inputField.value = '';
+            }
+        }
+
+        document.getElementById('chatInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        document.getElementById('password').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                signup();
+            }
+        });
+    </script>
+</body>
+</html>
